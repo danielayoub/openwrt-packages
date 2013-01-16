@@ -19,9 +19,6 @@
                                  * to fragmanet IPv4 if result IPv6 packet will be > 1280
                                  */
 
-#define TRANSLATED_PREFIX 0x0000ffff /* third byte in IPv4-translated addr prefix */
-#define MAPPED_PREFIX 0x0000ffff     /* third byte in IPv4-mapped addr prefix */
-
 #define IP4_IP6_HDR_DIFF 20     /* diffirence between IPv4 and IPv6 headers */
 #define IP6_FRAGMENT_SIZE 8     /* size of Fragment Header */
 

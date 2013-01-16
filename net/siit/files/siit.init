@@ -1,0 +1,58 @@
+#!/bin/sh /etc/rc.common
+
+START=93
+
+start() {
+	load_modules /etc/modules.d/*
+	
+	hostname=$(uci_get system @system[0] hostname OpenWrt)
+
+	# if the user hasn't screwed with the hostname this should be four random hex digits on first boot
+	$(echo "$hostname" | awk '{ if($0 !~ /^[0-9a-f]{4}$/) exit 1; }') && (
+		ifconfig siit0 up
+		# translate the source v4 address (10.64.0.0) to a v6 address from our /64 prefix
+		# the tricky part is that we have to do this in a way that doesn't require a change of the tcp checksums (which I probably screwed up)
+		let translated_sprefix_3=-0x2a01-0x0348-0x012f-"0x$hostname"
+		while [ $translated_sprefix_3 -lt 0 ]; do let translated_sprefix_3=translated_sprefix_3+0xffff; done
+		printf "%d,%d,%d,%d" 0x2a010348 "0x012f$hostname" $translated_sprefix_3 "0x0a40$hostname" > /sys/module/siit/parameters/translated_sprefix
+		echo 0,0,0,0 > /sys/module/siit/parameters/v4_in_v6_smask
+		
+		# do regular siit translation, i.e., ::ffff:a.b.c.d for the v6 destination address
+		echo 0,0,65535,0 > /sys/module/siit/parameters/translated_dprefix
+		echo 0,0,0,-1 > /sys/module/siit/parameters/v4_in_v6_dmask
+
+
+		# on the way back the original v4 address is in two places
+		echo 0,65535,0,-65536 > /sys/module/siit/parameters/v6_in_v4_dmask
+		# make lo listen to that address
+		ip addr add dev lo "10.64.`printf '%d' 0x${hostname:0:2}`.`printf '%d' 0x${hostname:2:4}`"
+		# announce the v6 destination address in batman and make sure it's not used as a source
+		let translated_dprefix_3=-0x2a01-0x0348-0x012f
+		while [ $translated_dprefix_3 -lt 0 ]; do let translated_dprefix_3=translated_dprefix_3+0xffff; done
+		ip -6 addr add "2a01:348:12f:$hostname:0:`printf '%x' $translated_dprefix_3`:a40:0" dev br-lan
+		ip -6 route del 2a01:348:12f::/48 dev br-lan
+		ip -6 route add 2a01:348:12f::/48 dev br-lan src "2a01:348:12f:$hostname::1"
+		# register a fake address where we can tee packets to (hack to work around the problem that there is no DNAT for v6)
+		ip -6 route add ::ffff:10.64.0.0/128 dev siit0
+		ip6tables -I INPUT -i br-lan -d "2a01:348:12f:$hostname:0:`printf '%x' $translated_dprefix_3`:a40:0" -j DROP
+		ip6tables -I INPUT -i br-lan -d "2a01:348:12f:$hostname:0:`printf '%x' $translated_dprefix_3`:a40:0" -j TEE --gateway ::ffff:10.64.0.0
+
+		# the source address is in standard siit format, i.e., ::ffff:a.b.c.d
+		echo 0,0,0,-1 > /sys/module/siit/parameters/v6_in_v4_smask
+
+		# do NAT for packets bound for the v4 internet
+		iptables -t nat -A POSTROUTING -o siit0 -j SNAT --to-source "10.64.`printf '%d' 0x${hostname:0:2}`.`printf '%d' 0x${hostname:2:4}`"
+
+		# route all freifunk v4 traffic through siit
+		ip route flush table 64
+		ip route show table main | grep -Ev ^default | while read ROUTE ; do ip route add table 64 $ROUTE;
+		done
+		ip route add table 64 default dev siit0 src "10.64.`printf '%d' 0x${hostname:0:2}`.`printf '%d' 0x${hostname:2:4}`"
+		# route packages through batman if there is no other connection
+		ip route add default dev siit0 src "10.64.`printf '%d' 0x${hostname:0:2}`.`printf '%d' 0x${hostname:2:4}`"
+		ip rule add fwmark 1 table 64
+
+		# translated v4 packets are sent via batman to our default route
+		ip -6 route add ::ffff:0.0.0.0/96 via 2a01:348:12f::1 dev br-lan
+	)
+}

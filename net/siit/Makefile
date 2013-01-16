@@ -28,6 +28,11 @@ define KernelPackage/siit/description
  Stateless IP ICMP Translation Algorithm
 endef
 
+define KernelPackage/siit/install
+	$(INSTALL_DIR) $(1)/etc/init.d/
+	$(INSTALL_BIN) files/$(PKG_NAME).init $(1)/etc/init.d/$(PKG_NAME)
+endef
+
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	cp src/Makefile src/siit.h src/siit.c $(PKG_BUILD_DIR)/

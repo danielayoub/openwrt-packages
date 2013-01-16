@@ -1,0 +1,2 @@
+#!/bin/sh
+ip -6 link set $INTERFACE down

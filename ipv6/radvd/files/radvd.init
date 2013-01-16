@@ -19,6 +19,8 @@ RADVD_RDNSS_STRING_OPTIONS='AdvRDNSSLifetime FlushRDNSS'
 
 RADVD_DNSSL_STRING_OPTIONS='AdvDNSSLLifetime FlushDNSSL'
 
+. $IPKG_INSTROOT/lib/functions/ffulm.sh
+
 validate_varname() {
 	local varname=$1
 	[ -z "$varname" -o "$varname" != "${varname%%[!A-Za-z0-9_]*}" ] && return 1
@@ -391,6 +393,8 @@ radvd_write_config() {
 }
 
 start() {
+	apply_ffulm_replacements_inplace /etc/config/radvd
+
 	config_load radvd
 
 	RADVD_CONFIG_FILE=

@@ -11,6 +11,7 @@
 #include <linux/autoconf.h>
 #endif
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>       /* printk() */
 #include <linux/slab.h>
@@ -38,6 +39,30 @@
 #include "siit.h"
 
 MODULE_AUTHOR("Dmitriy Moscalev, Grigory Klyuchnikov, Felix Fietkau");
+
+static u32 translated_sprefix[]={0x0000,0x0000,0xffff,0x0000};
+module_param_array(translated_sprefix, int, NULL, S_IRUSR|S_IWUSR);
+MODULE_PARM_DESC(translated_sprefix, "v6 address template to use when translating source v4 addresses to v6 addresses (default: 0,0,65536,0, i.e., 0::ffff:0.0.0.0)");
+
+static u32 translated_dprefix[]={0x0000,0x0000,0xffff,0x0000};
+module_param_array(translated_dprefix, int, NULL, S_IRUSR|S_IWUSR);
+MODULE_PARM_DESC(translated_sprefix, "v6 address template to use when translating destination v4 addresses to v6 addresses (default: 0,0,65536,0, i.e., 0::ffff:0.0.0.0)");
+
+static u32 v4_in_v6_smask[]={0x0000,0x0000,0x0000,0xffffffff};
+module_param_array(v4_in_v6_smask, int, NULL, S_IRUSR|S_IWUSR);
+MODULE_PARM_DESC(v4_in_v6_smask, "bitmask defining where to xor the v4 source address when translating to a v6 address (default: 0,0,0,-1, i.e., use the last 32 bits)");
+
+static u32 v4_in_v6_dmask[]={0x0000,0x0000,0x0000,0xffffffff};
+module_param_array(v4_in_v6_dmask, int, NULL, S_IRUSR|S_IWUSR);
+MODULE_PARM_DESC(v4_in_v6_smask, "bitmask defining where to xor the v4 destination address when translating to a v6 address (default: 0,0,0,-1, i.e., use the last 32 bits)");
+
+static u32 v6_in_v4_smask[]={0x0000,0x0000,0x0000,0xffffffff};
+module_param_array(v6_in_v4_smask, int, NULL, S_IRUSR|S_IWUSR);
+MODULE_PARM_DESC(v4_in_v6_smask, "bitmask defining which parts of the v6 source address to xor in the v4 address (default: 0,0,0,-1, i.e., use the last 32 bits)");
+
+static u32 v6_in_v4_dmask[]={0x0000,0x0000,0x0000,0xffffffff};
+module_param_array(v6_in_v4_dmask, int, NULL, S_IRUSR|S_IWUSR);
+MODULE_PARM_DESC(v4_in_v6_smask, "bitmask defining which parts of the v6 destination address to xor in the v4 address (default: 0,0,0,-1, i.e., use the last 32 bits)");
 
 /*
  * If tos_ignore_flag != 0, we don't copy TOS and Traffic Class
@@ -227,64 +252,17 @@ static int ip4_ip6(char *src, int len, char *dst, int include_flag)
 	/* Hop Limit = IPv4 TTL */
 	ih6->hop_limit = ih4->ttl;
 
-	/* Translate source destination addresses,
-	   for IPv6 host it's IPv4-translated IPv6 address,
-	   for IPv4 host it's IPv4-mapped IPv6 address
+	/* Source address */
+	ih6->saddr.in6_u.u6_addr32[0] = htonl(translated_sprefix[0]) ^ (ih4->saddr & htonl(v4_in_v6_smask[0]));
+	ih6->saddr.in6_u.u6_addr32[1] = htonl(translated_sprefix[1]) ^ (ih4->saddr & htonl(v4_in_v6_smask[1]));
+	ih6->saddr.in6_u.u6_addr32[2] = htonl(translated_sprefix[2]) ^ (ih4->saddr & htonl(v4_in_v6_smask[2]));
+	ih6->saddr.in6_u.u6_addr32[3] = htonl(translated_sprefix[3]) ^ (ih4->saddr & htonl(v4_in_v6_smask[3]));
 
-	   !!WARNING!! Instead IPv4-mapped IPv6 addresses we use addreesses
-	   with unused prefix ::ffff:ffff:0:0/96, because KAME implementation
-	   doesn't support IPv4-mapped addresses in IPv6 packets and discard them.
-
-	*/
-
-	if (include_flag) {
-		/*
-		   It's ICMP included IP packet and there is a diffirence
-		   in src/dst addresses then src/dst in normal direction
-		 */
-
-		/*
-		   Source address
-		   is IPv4-translated IPv6 address because packet traveled
-		   from IPv6 to IPv4 area
-		*/
-		ih6->saddr.in6_u.u6_addr32[0] = 0;
-		ih6->saddr.in6_u.u6_addr32[1] = 0;
-		ih6->saddr.in6_u.u6_addr32[2] = htonl(TRANSLATED_PREFIX); /* to network order bytes */
-		ih6->saddr.in6_u.u6_addr32[3] = ih4->saddr;
-
-		/*
-		   Destination address
-		   is IPv4-mapped address (but it's not IPv4- mapped, we use
-		   prefix ::ffff:ffff:0:0/96
-		 */
-		ih6->daddr.in6_u.u6_addr32[0] = 0;
-		ih6->daddr.in6_u.u6_addr32[1] = 0;
-		ih6->daddr.in6_u.u6_addr32[2] = htonl(MAPPED_PREFIX); /* to network order bytes */
-		ih6->daddr.in6_u.u6_addr32[3] = ih4->daddr;
-	}
-	else {
-
-		/*
-		   This is normal case (packet isn't included IP packet)
-
-		   Source address
-		   is IPv4-mapped address (but it's not IPv4- mapped, we use
-		   prefix ::ffff:ffff:0:0/96)
-		*/
-		ih6->saddr.in6_u.u6_addr32[0] = 0;
-		ih6->saddr.in6_u.u6_addr32[1] = 0;
-		ih6->saddr.in6_u.u6_addr32[2] = htonl(MAPPED_PREFIX); /* to network order bytes */
-		ih6->saddr.in6_u.u6_addr32[3] = ih4->saddr;
-
-		/* Destination address
-		   is is IPv4-translated IPv6 address
-		 */
-		ih6->daddr.in6_u.u6_addr32[0] = 0;
-		ih6->daddr.in6_u.u6_addr32[1] = 0;
-		ih6->daddr.in6_u.u6_addr32[2] = htonl(TRANSLATED_PREFIX); /* to network order bytes */
-		ih6->daddr.in6_u.u6_addr32[3] = ih4->daddr;
-	}
+	/* Destination address */
+	ih6->daddr.in6_u.u6_addr32[0] = htonl(translated_dprefix[0]) ^ (ih4->daddr & htonl(v4_in_v6_dmask[0]));
+	ih6->daddr.in6_u.u6_addr32[1] = htonl(translated_dprefix[1]) ^ (ih4->daddr & htonl(v4_in_v6_dmask[1]));
+	ih6->daddr.in6_u.u6_addr32[2] = htonl(translated_dprefix[2]) ^ (ih4->daddr & htonl(v4_in_v6_dmask[2]));
+	ih6->daddr.in6_u.u6_addr32[3] = htonl(translated_dprefix[3]) ^ (ih4->daddr & htonl(v4_in_v6_dmask[3]));
 
 	/* Payload Length */
 	plen = new_tot_len - hdr_len; /* Payload length = IPv4 total len - IPv4 header len */
@@ -550,37 +528,6 @@ static int ip6_ip4(char *src, int len, char *dst, int include_flag)
 
 		real_len = sizeof(struct iphdr);
 
-		/* Check validation of Saddr & Daddr? is a packet to fall under our translation? */
-		if (include_flag) { /* It's ICMP included IP packet,
-							   about process include_flag see comment in ip4_ip6() */
-			if (ip6_hdr->saddr.s6_addr32[2] != htonl(MAPPED_PREFIX)) {
-				PDEBUG("ip6_ip4(): Included IP packet Src addr isn't mapped addr: %x%x%x%x, packet dropped.\n",
-					   ip6_hdr->saddr.s6_addr32[0], ip6_hdr->saddr.s6_addr32[1],
-					   ip6_hdr->saddr.s6_addr32[2], ip6_hdr->saddr.s6_addr32[3]);
-				return -1;
-			}
-			if ( ip6_hdr->daddr.s6_addr32[2] != htonl(TRANSLATED_PREFIX)) {
-				PDEBUG("ip6_ip4(): Included IP packet Dst addr isn't translated addr: %x%x%x%x, packet dropped.\n",
-					   ip6_hdr->daddr.s6_addr32[0], ip6_hdr->daddr.s6_addr32[1],
-					   ip6_hdr->daddr.s6_addr32[2], ip6_hdr->daddr.s6_addr32[3]);
-				return -1;
-			}
-		}
-		else { /* It's normal IP packet (not included in ICMP) */
-			if (ip6_hdr->saddr.s6_addr32[2] != htonl(TRANSLATED_PREFIX)) {
-				PDEBUG("ip6_ip4(): Src addr isn't translated addr: %x%x%x%x, packet dropped.\n",
-					   ip6_hdr->saddr.s6_addr32[0], ip6_hdr->saddr.s6_addr32[1],
-					   ip6_hdr->saddr.s6_addr32[2], ip6_hdr->saddr.s6_addr32[3]);
-				return -1;
-			}
-			if ( ip6_hdr->daddr.s6_addr32[2] != htonl(MAPPED_PREFIX)) {
-				PDEBUG("ip6_ip4(): Dst addr isn't mapped addr: %x%x%x%x, packet dropped.\n",
-					   ip6_hdr->daddr.s6_addr32[0], ip6_hdr->daddr.s6_addr32[1],
-					   ip6_hdr->daddr.s6_addr32[2], ip6_hdr->daddr.s6_addr32[3]);
-				return -1;
-			}
-		}
-
 		/* Set IPv4 Fragment Offset and ID to 0
 		   before process any Option Headers */
 		ip_hdr->frag_off = 0;
@@ -785,10 +732,18 @@ static int ip6_ip4(char *src, int len, char *dst, int include_flag)
 	/* IPv4 Protocol = Next Header that will point to upper layer protocol */
 	ip_hdr->protocol = next_hdr;
 
-	/* IPv4 Src addr = last 4 bytes from IPv6 Src addr */
-	ip_hdr->saddr = ip6_hdr->saddr.s6_addr32[3];
-	/* IPv4 Dst addr = last 4 bytes from IPv6 Dst addr */
-	ip_hdr->daddr = ip6_hdr->daddr.s6_addr32[3];
+	/* IPv4 Src addr */
+	ip_hdr->saddr = 0;
+	ip_hdr->saddr ^= ip6_hdr->saddr.s6_addr32[0] & htonl(v6_in_v4_smask[0]);
+	ip_hdr->saddr ^= ip6_hdr->saddr.s6_addr32[1] & htonl(v6_in_v4_smask[1]);
+	ip_hdr->saddr ^= ip6_hdr->saddr.s6_addr32[2] & htonl(v6_in_v4_smask[2]);
+	ip_hdr->saddr ^= ip6_hdr->saddr.s6_addr32[3] & htonl(v6_in_v4_smask[3]);
+	/* IPv4 Dst addr */
+	ip_hdr->daddr = 0;
+	ip_hdr->daddr ^= ip6_hdr->daddr.s6_addr32[0] & htonl(v6_in_v4_dmask[0]);
+	ip_hdr->daddr ^= ip6_hdr->daddr.s6_addr32[1] & htonl(v6_in_v4_dmask[1]);
+	ip_hdr->daddr ^= ip6_hdr->daddr.s6_addr32[2] & htonl(v6_in_v4_dmask[2]);
+	ip_hdr->daddr ^= ip6_hdr->daddr.s6_addr32[3] & htonl(v6_in_v4_dmask[3]);
 
 	/* Calculate IPv4 header checksum */
 	ip_hdr->check = 0;

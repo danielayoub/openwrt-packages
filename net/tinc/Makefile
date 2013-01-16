@@ -50,6 +50,12 @@ define Package/tinc/install
 	$(INSTALL_DIR) $(1)/etc/openvpn
 	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
 	$(INSTALL_DATA) files/tinc.upgrade $(1)/lib/upgrade/keep.d/tinc
+	$(INSTALL_DIR) $(1)/etc/tinc
+	$(INSTALL_DIR) $(1)/etc/tinc/ffulm
+	$(INSTALL_DATA) files/tinc-up $(1)/etc/tinc/ffulm/tinc-up
+	$(INSTALL_DATA) files/tinc-down $(1)/etc/tinc/ffulm/tinc-down
+	$(INSTALL_DIR) $(1)/etc/tinc/ffulm/hosts
+	$(INSTALL_DATA) files/drugtestbots $(1)/etc/tinc/ffulm/hosts/drugtestbots
 endef
 
 define Package/tinc/conffiles

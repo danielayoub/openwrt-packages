@@ -16,6 +16,8 @@ LIST_SEP="
 "
 TMP_TINC="/tmp/tinc"
 
+. $IPKG_INSTROOT/lib/functions/ffulm.sh
+
 append_param() {
 	local v="$1"
 	case "$v" in
@@ -196,6 +198,8 @@ reload_instance() {
 }
 
 start() {
+	apply_ffulm_replacements_inplace /etc/config/tinc
+
 	config_load 'tinc'
 
 	config_foreach prepare_net 'tinc-net'

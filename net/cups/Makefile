@@ -31,7 +31,7 @@ define Package/cups
 $(call Package/cups/Default)
   SECTION:=net
   CATEGORY:=Network
-  DEPENDS:=+libcups +libcupsmime +libcupscgi +libcupsppdc +libusb
+  DEPENDS:=+libcups +libcupsmime +libcupscgi +libcupsppdc +libusb-1.0
   TITLE:=Common UNIX Printing System (daemon)
 endef
 
@@ -394,6 +394,7 @@ define Build/Configure
 		--with-cups-user="nobody" \
 		--with-cups-group="nogroup" \
 		--with-components="embedded" \
+		--with-pdftops="none" \
 		--without-perl \
 		--without-python \
 		--without-php \
@@ -483,14 +484,12 @@ define Package/cups-client/install
 		$(PKG_INSTALL_DIR)/usr/sbin/{cupsaccept,cupsaddsmb,cupsfilter} \
 		$(PKG_INSTALL_DIR)/usr/sbin/{lpadmin,lpinfo,lpmove} \
 		$(1)/usr/sbin/
-	(cd $(1)/usr/sbin; ln -sf cupsaccept accept;
-		ln -sf cupsaccept cupsenable; ln -sf cupsaccept cupsdisable;
-		ln -sf cupsaccept reject; ln -sf cupsaccept cupsreject;)
+	(cd $(1)/usr/sbin; ln -sf cupsaccept accept; ln -sf cupsaccept cupsenable; ln -sf cupsaccept cupsdisable; ln -sf cupsaccept reject; ln -sf cupsaccept cupsreject;)
 endef
 
 define Package/cups-filters/install
 	$(INSTALL_DIR) $(1)/usr/lib/cups/filter
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/cups/filter/{bannertops,commandtoescpx,commandtopclx,imagetops,imagetoraster,pdftops,rastertoepson,rastertopwg,rastertohp,rastertoescpx,rastertopclx,rastertolabel,texttops} \
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/cups/filter/{bannertops,commandtoescpx,commandtopclx,imagetops,imagetoraster,rastertoepson,rastertopwg,rastertohp,rastertoescpx,rastertopclx,rastertolabel,texttops} \
 		$(1)/usr/lib/cups/filter
 	(cd $(1)/usr/lib/cups/filter; ln -sf rastertolabel rastertodymo;)
 endef

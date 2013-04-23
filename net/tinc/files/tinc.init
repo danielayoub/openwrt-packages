@@ -173,6 +173,15 @@ start_instance() {
 	# append params
 	append_params "$s" log debug
 
+	[ ! -c /dev/net/tun ] && {
+		mkdir -p /dev/net/
+		mknod /dev/net/tun c 10 200
+		if [ ! -c /dev/net/tun ]; then
+			logger -t "$config" "Device not available (/dev/net/tun). Exiting."
+			exit 1
+		fi
+	}
+
 	SERVICE_PID_FILE="/var/run/tinc.$s.pid"
 	service_start $BIN -c "$TMP_TINC/$s" -n $s $ARGS --pidfile="$SERVICE_PID_FILE"
 }
